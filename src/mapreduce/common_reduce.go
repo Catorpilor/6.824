@@ -55,7 +55,7 @@ func doReduce(
 		fn := reduceName(jobName, i, reduceTask)
 		fd, err := os.Open(fn)
 		if err != nil {
-			fmt.Printf("create file fn: %s got err:%s\n", fn, err.Error())
+			fmt.Printf("open file fn: %s got err:%s\n", fn, err.Error())
 			continue
 		}
 		fds[i] = fd
