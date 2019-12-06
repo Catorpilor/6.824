@@ -2,7 +2,6 @@ package mapreduce
 
 import (
 	"fmt"
-	"sync"
 )
 
 //
@@ -27,8 +26,6 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	}
 
 	fmt.Printf("Schedule: %v %v tasks (%d I/Os)\n", ntasks, phase, n_other)
-	var wg sync.WaitGroup
-	wg.Add(ntasks)
 	// ctasks behaves like a task queue
 	ctasks := make(chan int)
 	go func() {
@@ -36,31 +33,39 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 			ctasks <- i
 		}
 	}()
-	go func() {
-		for {
-			w := <-registerChan
-			idx := <-ctasks
-			debug("worker: %v get job: %d\n", w, idx)
-			args := DoTaskArgs{JobName: jobName, Phase: phase, TaskNumber: idx, NumOtherPhase: n_other}
-			if phase == mapPhase {
-				args.File = mapFiles[idx]
-			}
+	successTasks := 0
+	success := make(chan int)
+	for {
+		select {
+		case idx := <-ctasks:
 			go func() {
+				w := <-registerChan
+				args := DoTaskArgs{JobName: jobName, Phase: phase, TaskNumber: idx, NumOtherPhase: n_other}
+				if phase == mapPhase {
+					args.File = mapFiles[idx]
+				}
 				if call(w, "Worker.DoTask", args, nil) {
-					wg.Done()
-					registerChan <- w
+					go func() { registerChan <- w }()
+					success <- 1
 				} else {
 					ctasks <- idx
 				}
+
 			}()
+		case <-success:
+			successTasks++
+		default:
+			if successTasks == ntasks {
+				goto END
+			}
 		}
-	}()
+	}
 
 	// All ntasks tasks have to be scheduled on workers. Once all tasks
 	// have completed successfully, schedule() should return.
 	//
 	// Your code here (Part III, Part IV).
 	//
-	wg.Wait()
+END:
 	fmt.Printf("Schedule: %v done\n", phase)
 }
